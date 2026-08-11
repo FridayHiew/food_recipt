@@ -3,4 +3,5 @@ export interface Settings {
   aiEnabled: boolean;
   activeModelId: string | null;
   theme: "light" | "dark" | "system";
+  debugMode?: boolean;
 }

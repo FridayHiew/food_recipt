@@ -123,6 +123,21 @@ export default function Settings() {
 
       {/* Data Management */}
       <section>
+        <h2 className="font-sans text-xs uppercase tracking-[0.2em] mb-6 border-b border-[#1A1A1A] pb-1 inline-block">System Configuration</h2>
+        <div className="flex flex-col gap-4 mb-8">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input 
+              type="checkbox" 
+              className="w-4 h-4 accent-[#1A1A1A]" 
+              checked={!!settings.debugMode}
+              onChange={async (e) => {
+                await db.settings.update("user-settings", { debugMode: e.target.checked });
+              }}
+            />
+            <span className="font-sans text-xs uppercase tracking-widest text-[#1A1A1A]">Enable Developer Debug Mode</span>
+          </label>
+        </div>
+
         <h2 className="font-sans text-xs uppercase tracking-[0.2em] mb-6 border-b border-[#1A1A1A] pb-1 inline-block">Data Layer</h2>
         
         <div className="flex flex-col sm:flex-row gap-4">

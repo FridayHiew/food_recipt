@@ -9,12 +9,23 @@ export function useAI() {
   const settings = useLiveQuery(() => db.settings.get("user-settings"));
   
   const [isGpuAvailable, setIsGpuAvailable] = useState<boolean>(true);
+  const [gpuInfo, setGpuInfo] = useState<string>("Checking...");
   const [modelStatus, setModelStatus] = useState<"not_installed" | "downloading" | "loading" | "ready" | "error">("not_installed");
   const [progressText, setProgressText] = useState("");
   const [progressValue, setProgressValue] = useState(0);
 
   useEffect(() => {
-    setIsGpuAvailable(CapabilityManager.isWebGPUAvailable());
+    let active = true;
+    const checkGPU = async () => {
+      const available = await CapabilityManager.isWebGPUAvailable();
+      const info = await CapabilityManager.getGPUInfo();
+      if (active) {
+        setIsGpuAvailable(available);
+        setGpuInfo(info);
+      }
+    };
+    checkGPU();
+    return () => { active = false; };
   }, []);
 
   const getActiveModelConfig = () => {
@@ -59,11 +70,13 @@ export function useAI() {
 
   return {
     isGpuAvailable,
+    gpuInfo,
     modelStatus,
     progressText,
     progressValue,
     loadModel,
     unloadModel,
-    activeModelConfig: getActiveModelConfig()
+    activeModelConfig: getActiveModelConfig(),
+    settings
   };
 }
