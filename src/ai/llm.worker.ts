@@ -1,4 +1,4 @@
-import { CreateMLCEngine, MLCEngine, InitProgressReport } from "@mlc-ai/web-llm";
+import { CreateMLCEngine, MLCEngine, InitProgressReport, prebuiltAppConfig } from "@mlc-ai/web-llm";
 
 let engine: MLCEngine | null = null;
 let currentModelId: string | null = null;
@@ -27,6 +27,10 @@ self.addEventListener("message", async (e: MessageEvent) => {
               progress: progress.progress,
             },
           });
+        },
+        appConfig: {
+          ...prebuiltAppConfig,
+          cacheBackend: "indexeddb",
         },
       });
       currentModelId = webllmModel;
