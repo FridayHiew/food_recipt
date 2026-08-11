@@ -191,9 +191,37 @@ Please keep this window open while the tensor weights compile. Your input will p
         </div>
       </div>
 
-      {(modelStatus === "downloading" || modelStatus === "error") && progressText && (
-        <div className="bg-[#1A1A1A] px-6 py-2 text-[10px] font-sans text-[#F9F7F2]/60 border-b border-[#1A1A1A]">
-           {progressText}
+      {(modelStatus === "downloading" || modelStatus === "loading") && (
+        <div className="bg-[#F4F1EA] border-b border-[#1A1A1A]/10 px-6 py-4 flex flex-col gap-2">
+          <div className="flex justify-between items-center text-xs font-sans uppercase tracking-widest text-[#1A1A1A]">
+            <span className="font-bold flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#D4A373] animate-pulse" />
+              {modelStatus === "downloading" ? "Downloading Model Weights..." : "Compiling local GPU Tensors..."}
+            </span>
+            <span className="font-mono text-xs font-bold">{Math.round(progressValue)}%</span>
+          </div>
+          
+          {/* Progress Bar */}
+          <div className="w-full h-2 bg-[#1A1A1A]/5 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-[#1A1A1A] transition-all duration-300 ease-out" 
+              style={{ width: `${progressValue || 2}%` }}
+            />
+          </div>
+
+          {progressText && (
+            <div className="text-[10px] font-sans text-[#1A1A1A]/60 flex items-center justify-between">
+              <span className="truncate max-w-[80%]">{progressText}</span>
+              <span className="font-mono">Est. Size: {activeModelConfig.sizeEstimate}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {modelStatus === "error" && progressText && (
+        <div className="bg-red-50 px-6 py-3 text-xs font-sans text-red-700 border-b border-red-200 flex justify-between items-center">
+           <span><strong>Error Loading Engine:</strong> {progressText}</span>
+           <button onClick={() => loadModel()} className="underline font-bold hover:text-red-900">Retry</button>
         </div>
       )}
 
