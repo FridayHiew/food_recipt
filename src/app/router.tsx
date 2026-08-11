@@ -1,4 +1,4 @@
-import { createBrowserRouter, Outlet } from "react-router-dom";
+import { createHashRouter, Outlet } from "react-router-dom";
 import Home from "../pages/Home";
 import Recipes from "../pages/Recipes";
 import RecipeDetail from "../pages/RecipeDetail";
@@ -31,7 +31,7 @@ function AppLayout() {
   );
 }
 
-export const router = createBrowserRouter([
+export const router = createHashRouter([
   {
     path: "/",
     element: <AppLayout />,
