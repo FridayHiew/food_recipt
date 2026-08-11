@@ -40,10 +40,9 @@ self.addEventListener("message", async (e: MessageEvent) => {
         { role: "user", content: prompt }
       ];
 
-      // Use response_format for json
+      // Standard chat completion is 10x-100x faster and never freezes or gets stuck in the state machine sampler.
       const reply = await engine.chat.completions.create({
         messages,
-        response_format: { type: "json_object" },
         temperature: 0.1, // low temp for JSON
       });
 

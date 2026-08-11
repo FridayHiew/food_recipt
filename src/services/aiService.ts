@@ -124,41 +124,171 @@ class AIServiceClass {
      return this.currentModelWebLlmId === webllmModel;
   }
 
+  private fallbackHeuristicExtract(prompt: string): RecipeSearchOutput {
+    this.logDebug("Running fallback rule-based heuristic extractor...");
+    const lowerPrompt = prompt.toLowerCase();
+    
+    // List of common culinary ingredients to detect
+    const commonIngredients = [
+      "chicken", "beef", "pork", "fish", "salmon", "shrimp", "tofu", "egg", "eggs",
+      "potato", "potatoes", "tomato", "tomatoes", "onion", "onions", "garlic", "carrot", "carrots",
+      "spinach", "broccoli", "rice", "pasta", "noodles", "cheese", "milk", "butter",
+      "mushroom", "mushrooms", "pepper", "peppers", "lemon", "avocado", "bean", "beans",
+      "steak", "lamb", "cabbage", "cucumber", "cilantro", "basil", "ginger", "soy sauce"
+    ];
+
+    const foundIngredients: string[] = [];
+    commonIngredients.forEach(ing => {
+      // Matches word boundaries
+      const regex = new RegExp(`\\b${ing}\\b`, 'i');
+      if (regex.test(lowerPrompt)) {
+        // Normalize pluralization slightly
+        const normalized = ing === "potatoes" ? "potato" :
+                           ing === "tomatoes" ? "tomato" :
+                           ing === "carrots" ? "carrot" :
+                           ing === "onions" ? "onion" :
+                           ing === "mushrooms" ? "mushroom" :
+                           ing === "peppers" ? "pepper" :
+                           ing === "eggs" ? "egg" :
+                           ing === "beans" ? "bean" : ing;
+        if (!foundIngredients.includes(normalized)) {
+          foundIngredients.push(normalized);
+        }
+      }
+    });
+
+    // Handle negative/excluded terms (e.g. "no tomato", "without onion", "exclude pepper")
+    const excludeList: string[] = [];
+    const excludePatterns = [
+      /no\s+(\w+)/gi,
+      /without\s+(\w+)/gi,
+      /exclude\s+(\w+)/gi,
+      /avoid\s+(\w+)/gi
+    ];
+    excludePatterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(lowerPrompt)) !== null) {
+        if (match[1]) {
+          excludeList.push(match[1]);
+        }
+      }
+    });
+
+    // Filter ingredients that are on the excluded list
+    const finalIngredients = foundIngredients.filter(ing => !excludeList.includes(ing));
+
+    // Guess cuisine
+    let cuisine: string | null = null;
+    const cuisines = ["italian", "mexican", "asian", "chinese", "japanese", "indian", "french", "thai", "greek"];
+    for (const c of cuisines) {
+      if (lowerPrompt.includes(c)) {
+        cuisine = c.charAt(0).toUpperCase() + c.slice(1);
+        break;
+      }
+    }
+
+    // Guess difficulty
+    let difficulty: string | null = null;
+    if (lowerPrompt.includes("easy") || lowerPrompt.includes("quick") || lowerPrompt.includes("simple")) {
+      difficulty = "Easy";
+    } else if (lowerPrompt.includes("hard") || lowerPrompt.includes("complex") || lowerPrompt.includes("difficult") || lowerPrompt.includes("expert")) {
+      difficulty = "Hard";
+    } else if (lowerPrompt.includes("medium") || lowerPrompt.includes("intermediate")) {
+      difficulty = "Medium";
+    }
+
+    // Guess max_time (e.g. "under 30 mins", "30 minutes")
+    let max_time: number | null = null;
+    const timeMatch = lowerPrompt.match(/(\d+)\s*(min|minute|hr|hour)/);
+    if (timeMatch && timeMatch[1]) {
+      const num = parseInt(timeMatch[1], 10);
+      const isHour = timeMatch[2].startsWith("hr") || timeMatch[2].startsWith("hour");
+      max_time = isHour ? num * 60 : num;
+    }
+
+    const output: RecipeSearchOutput = {
+      intent: finalIngredients.length > 0 ? "find_by_ingredient" : "find_recipe",
+      ingredients: finalIngredients,
+      exclude: excludeList,
+      max_time,
+      difficulty,
+      cuisine,
+      dietary_requirements: []
+    };
+
+    this.logDebug(`Heuristic Extraction output: ${JSON.stringify(output)}`);
+    return output;
+  }
+
   async extractSearchIntent(prompt: string): Promise<RecipeSearchOutput> {
     const worker = this.getWorker();
     
     this.logDebug(`Extracting search intent for prompt: "${prompt}"`);
     const startTime = performance.now();
-    const rawJson = await new Promise<string>((resolve, reject) => {
-      this.jsonResolver = resolve;
-      this.jsonRejector = reject;
-      worker.postMessage({ 
-        type: "GENERATE_JSON", 
-        payload: { 
-          prompt, 
-          systemPrompt: AI_PROMPTS.searchSystemPrompt 
-        } 
-      });
-    });
 
-    this.logDebug(`Raw JSON output generated in ${Math.round(performance.now() - startTime)}ms.`);
+    // 12-second timeout guard to ensure user is NEVER stuck waiting for slow models
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("AI intent extraction timed out (12s limit).")), 12000);
+    });
+    
     try {
-      const parsed = JSON.parse(rawJson);
+      const rawJson = await Promise.race([
+        new Promise<string>((resolve, reject) => {
+          this.jsonResolver = resolve;
+          this.jsonRejector = reject;
+          worker.postMessage({ 
+            type: "GENERATE_JSON", 
+            payload: { 
+              prompt, 
+              systemPrompt: AI_PROMPTS.searchSystemPrompt 
+            } 
+          });
+        }),
+        timeoutPromise
+      ]);
+
+      this.logDebug(`Raw JSON output generated in ${Math.round(performance.now() - startTime)}ms.`);
+      
+      // Robust JSON extraction & cleanup
+      const extractAndParseJSON = (text: string): any => {
+        const trimmed = text.trim();
+        try {
+          return JSON.parse(trimmed);
+        } catch (e) {
+          // Attempt extraction from markdown blocks or generic brackets
+          const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              return JSON.parse(jsonMatch[0]);
+            } catch (innerErr) {
+              // Clean up trailing commas inside arrays or objects before final attempt
+              const cleaned = jsonMatch[0]
+                .replace(/,\s*([\]}])/g, '$1')
+                .replace(/,\s*$/g, '');
+              try {
+                return JSON.parse(cleaned);
+              } catch (finalErr) {
+                throw new Error(`Failed to clean and parse JSON match: ${innerErr}`);
+              }
+            }
+          }
+          throw e;
+        }
+      };
+
+      const parsed = extractAndParseJSON(rawJson);
       const validated = recipeSearchSchema.parse(parsed);
       this.logDebug(`Intent validation succeeded: ${JSON.stringify(validated)}`);
       return validated;
     } catch (err: any) {
-      this.logDebug(`JSON parsing/validation failed: ${err.message || err}`);
-      // Fallback
-      return {
-        intent: "find_recipe",
-        ingredients: [],
-        exclude: [],
-        max_time: null,
-        difficulty: null,
-        cuisine: null,
-        dietary_requirements: []
-      };
+      this.logDebug(`AI search intent extraction failed or timed out: ${err.message || err}.`);
+      
+      // Reset state resolvers to prevent cross-request leaks
+      this.jsonResolver = null;
+      this.jsonRejector = null;
+      
+      // Clean fallback using heuristics
+      return this.fallbackHeuristicExtract(prompt);
     }
   }
 
